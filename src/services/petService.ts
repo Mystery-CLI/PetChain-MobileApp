@@ -3,7 +3,7 @@ import axios from 'axios';
 import apiClient from './apiClient';
 import { getItem, setItem, removeItem } from './localDB';
 import offlineQueue from './offlineQueue';
-import { parseQRCodeData } from './qrCodeService';
+import { scanQRCode, type QRScanResult } from './qrCodeService';
 import { logError } from '../utils/errorLogger';
 import { pickImage, compressImage, generateThumbnail, uploadToStorage } from '../utils/imageUtils';
 
@@ -124,6 +124,23 @@ function unwrapApiData<T>(payload: ApiResponse<T> | T): T {
   return payload as T;
 }
 
+function petFromQRData(scan: QRScanResult): Pet | null {
+  if (!scan.petId || !scan.petData) return null;
+
+  const now = new Date().toISOString();
+  return {
+    id: scan.petId,
+    name: scan.petData.name || 'Unknown Pet',
+    species: scan.petData.species || 'other',
+    breed: scan.petData.breed,
+    microchipId: scan.petData.microchipId,
+    photoUrl: scan.petData.photoUrl,
+    ownerId: scan.petData.ownerId || '',
+    createdAt: scan.petData.createdAt || now,
+    updatedAt: scan.petData.updatedAt || now,
+  };
+}
+
 // 👉 IMPORTANT FIX: no spread in function call context
 function logPetError(error: Error, context: Record<string, any>) {
   logError(error, context);
@@ -222,34 +239,32 @@ export async function getPetByQRCode(qrCode: string): Promise<Pet> {
     throw err;
   }
 
-  try {
-    const response = await apiClient.get(`/pets/qr/${encodeURIComponent(value)}`);
-    const pet = unwrapApiData(response.data);
-    await setItem(`${PET_CACHE_PREFIX}${pet.id}`, JSON.stringify(pet));
-    return pet;
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      if (error.response?.status === 404) {
-        const parsed = parseQRCodeData(value);
-        if (parsed?.petId) {
-          return getPetById(parsed.petId);
-        }
-      }
-      // If offline
-      if (!error.response) {
-        const parsed = parseQRCodeData(value);
-        if (parsed?.petId) {
-          const cached = await getCachedPet(parsed.petId);
-          if (cached) return cached;
-        }
-      }
-    }
-
-    throw toPetServiceError(error, {
-      action: 'get_pet_by_qr',
-      qrCode: value,
-    });
+  const scan = scanQRCode(value);
+  if (!scan.valid || !scan.petId) {
+    const err = new PetServiceError(scan.error || 'Invalid QR code', 'INVALID_QR_CODE');
+    logPetError(err, { service: 'petService', action: 'qr_parse' });
+    throw err;
   }
+
+  const cached = await getCachedPet(scan.petId);
+  if (cached) return cached;
+
+  const cachedList = await getCachedPets();
+  const listMatch = cachedList.find((pet) => pet.id === scan.petId);
+  if (listMatch) {
+    await setItem(`${PET_CACHE_PREFIX}${listMatch.id}`, JSON.stringify(listMatch));
+    return listMatch;
+  }
+
+  const embeddedPet = petFromQRData(scan);
+  if (embeddedPet) {
+    await setItem(`${PET_CACHE_PREFIX}${embeddedPet.id}`, JSON.stringify(embeddedPet));
+    return embeddedPet;
+  }
+
+  const err = new PetServiceError('Pet not found in local storage', 'LOCAL_PET_NOT_FOUND');
+  logPetError(err, { service: 'petService', action: 'qr_local_lookup', petId: scan.petId });
+  throw err;
 }
 
 export async function createPet(data: CreatePetInput): Promise<Pet> {

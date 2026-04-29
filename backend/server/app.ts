@@ -13,6 +13,7 @@ import petsRouter from './routes/pets';
 import usersRouter from './routes/users';
 import importRouter from './routes/import';
 import paymentsRouter from './routes/payments';
+import docsRouter from './routes/docs';
 import { attachAudit } from '../middleware/auditLog';
 
 export function createApp(): Express {
@@ -36,6 +37,7 @@ export function createApp(): Express {
   api.use('/import', importRouter);
   api.use('/payments', paymentsRouter);
   api.use('/audit-logs', auditLogsRouter);
+  api.use('/docs', docsRouter);
 
   app.use('/api', api);
 

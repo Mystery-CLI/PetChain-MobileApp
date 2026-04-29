@@ -9,6 +9,8 @@ import {
   scheduleAppointmentNotification,
   scheduleVaccinationReminder,
   cancelEntityNotification,
+  filterNotificationsByCategory,
+  groupNotificationsByCategory,
   scheduleFutureNotification,
   updateScheduledNotification,
   cancelScheduledNotification,
@@ -162,6 +164,7 @@ describe('notificationService', () => {
             body: 'This is a custom notification',
             data: expect.objectContaining({
               type: 'scheduled',
+              category: 'general',
               notificationId: 'sched-123',
               customData: 'test',
             }),
@@ -203,6 +206,29 @@ describe('notificationService', () => {
       await cancelScheduledNotification('sched-123');
 
       expect(Notifications.cancelScheduledNotificationAsync).toHaveBeenCalledWith('notif-id');
+    });
+  });
+
+  describe('notification categories', () => {
+    const requests = [
+      { content: { data: { category: 'medication' } } },
+      { content: { data: { type: 'appointment' } } },
+      { content: { data: { type: 'vaccination' } } },
+      { content: { data: {} } },
+    ] as Notifications.NotificationRequest[];
+
+    it('filters notifications by category', () => {
+      expect(filterNotificationsByCategory(requests, 'appointments')).toEqual([requests[1]]);
+      expect(filterNotificationsByCategory(requests, 'all')).toHaveLength(4);
+    });
+
+    it('groups notifications by category', () => {
+      const grouped = groupNotificationsByCategory(requests);
+
+      expect(grouped.medication).toEqual([requests[0]]);
+      expect(grouped.appointments).toEqual([requests[1]]);
+      expect(grouped.health).toEqual([requests[2]]);
+      expect(grouped.general).toEqual([requests[3]]);
     });
   });
 
