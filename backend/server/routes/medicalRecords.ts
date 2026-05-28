@@ -117,6 +117,7 @@ router.get('/:id', (req: AuthenticatedRequest, res) => {
 });
 
 router.post('/:id/anchor', authorizeRoles(UserRole.ADMIN, UserRole.VET), async (req, res) => {
+  const body = req.body as { sourceSecret?: string; network?: 'testnet' | 'mainnet' };
   const row = store.medicalRecords.get(req.params.id);
   if (!row) return sendError(res, 404, 'NOT_FOUND', 'Medical record not found');
 
@@ -124,8 +125,8 @@ router.post('/:id/anchor', authorizeRoles(UserRole.ADMIN, UserRole.VET), async (
     const result = await stellarAnchorService.anchorRecord({
       recordId: row.id,
       payload: toApiRecord(row),
-      sourceSecret: typeof req.body?.sourceSecret === 'string' ? req.body.sourceSecret : undefined,
-      network: req.body?.network === 'mainnet' ? 'mainnet' : 'testnet',
+      sourceSecret: typeof body.sourceSecret === 'string' ? body.sourceSecret : undefined,
+      network: body.network === 'mainnet' ? 'mainnet' : 'testnet',
     });
 
     const next: StoredMedicalRecord = {

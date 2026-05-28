@@ -21,6 +21,7 @@ export type MainTabParamList = {
   PetList: undefined;
   Medications: undefined;
   Appointments: undefined;
+  Vaccinations: undefined;
   Community: undefined;
   Emergency: undefined;
   Profile: undefined;

@@ -431,28 +431,39 @@ export const scheduleVaccinationReminder = async (vaccination: Vaccination): Pro
   await cancelEntityNotification(vaccination.id);
 
   const dueDate = new Date(vaccination.dueDate);
-  if (dueDate <= new Date()) return '';
+  if (Number.isNaN(dueDate.getTime()) || dueDate <= new Date()) return '';
 
-  const notificationId = await Notifications.scheduleNotificationAsync({
-    content: {
-      title: 'Vaccination Reminder',
-      body: `${vaccination.name} is due soon`,
-      sound: prefs.soundEnabled ? 'default' : undefined,
-      data: {
-        type: 'vaccination' as NotificationGroup,
-        category: resolveNotificationCategory('vaccination'),
-        vaccinationId: vaccination.id,
+  const notificationIds: string[] = [];
+  for (const leadDays of [30, 7, 1]) {
+    const triggerDate = new Date(dueDate);
+    triggerDate.setDate(dueDate.getDate() - leadDays);
+    if (triggerDate <= new Date()) continue;
+
+    const notificationId = await Notifications.scheduleNotificationAsync({
+      content: {
+        title: 'Vaccination Reminder',
+        body: `${vaccination.name} is due in ${leadDays} day${leadDays === 1 ? '' : 's'}`,
+        sound: prefs.soundEnabled ? 'default' : undefined,
+        data: {
+          type: 'vaccination' as NotificationGroup,
+          category: resolveNotificationCategory('vaccination'),
+          vaccinationId: vaccination.id,
+          petId: vaccination.petId,
+          dueDate: vaccination.dueDate,
+          leadDays,
+        },
+        categoryIdentifier: resolveNotificationCategory('vaccination'),
       },
-      categoryIdentifier: resolveNotificationCategory('vaccination'),
-    },
-    trigger: {
-      type: 'date',
-      date: dueDate,
-    } as Notifications.DateTriggerInput,
-  });
+      trigger: {
+        type: 'date',
+        date: triggerDate,
+      } as Notifications.DateTriggerInput,
+    });
+    notificationIds.push(notificationId);
+  }
 
-  await saveNotificationIds(vaccination.id, [notificationId]);
-  return notificationId;
+  await saveNotificationIds(vaccination.id, notificationIds);
+  return notificationIds[0] ?? '';
 };
 
 // ─── Alert helpers ───────────────────────────────────────────────────────────

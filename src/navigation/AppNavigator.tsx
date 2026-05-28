@@ -30,6 +30,7 @@ import PetProfileScreen from '../screens/PetProfileScreen';
 import PetShareScreen from '../screens/PetShareScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import QRScannerScreen from '../screens/QRScannerScreen';
+import VaccinationScreen from '../screens/VaccinationScreen';
 import analyticsService from '../services/analyticsService';
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
@@ -172,6 +173,11 @@ function MainTabs() {
         component={AppointmentScreen}
         options={{ title: 'Appointments' }}
       />
+      <Tab.Screen
+        name="Vaccinations"
+        component={VaccinationScreen}
+        options={{ title: 'Vaccinations' }}
+      />
       <Tab.Screen name="Community" component={CommunityScreen} options={{ title: 'Community' }} />
       <Tab.Screen
         name="Emergency"
@@ -206,6 +212,7 @@ const linking: LinkingOptions<RootStackParamList> = {
           },
           Medications: 'medications',
           Appointments: 'appointments',
+          Vaccinations: 'vaccinations',
           Community: 'community',
           Emergency: 'emergency',
           Profile: 'profile',
