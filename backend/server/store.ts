@@ -57,6 +57,12 @@ export interface StoredMedicalRecord {
   blockchainHash?: string; // Hash stored on-chain
   isBlockchainVerified?: boolean; // Verified flag (backend-computed)
   blockchainVerifiedAt?: string; // When verification was last performed
+
+  // Federated vet signature fields
+  vetSignature?: string; // Ed25519 signature over record hash
+  vetFederatedAddress?: string; // e.g. dr.smith*petchain.app
+  vetPublicKey?: string; // Stellar public key of signing vet
+  vetSignedAt?: string; // When the vet signed this record
 }
 
 export interface StoredAppointment {

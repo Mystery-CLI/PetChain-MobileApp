@@ -1,12 +1,12 @@
+import path from 'path';
+
 import cors from 'cors';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 
 import { errBody } from './response';
-import { getRedisClient } from '../config/redis';
 import { createRedisSessionMiddleware } from '../middleware/redisSession';
 import { sanitizeInputs } from '../middleware/sanitize';
 import { applySecurityHeaders } from '../middleware/securityHeaders';
-import { getCacheMetrics, warmCache } from '../services/cacheService';
 import analyticsRouter from './routes/analytics';
 import appointmentsRouter from './routes/appointments';
 import auditLogsRouter from './routes/auditLogs';
@@ -20,13 +20,13 @@ import medicalRecordsRouter from './routes/medicalRecords';
 import medicationsRouter from './routes/medications';
 import paymentsRouter from './routes/payments';
 import petsRouter from './routes/pets';
-import photosRouter from './routes/photos';
 import privacyRouter from './routes/privacy';
 import searchRouter from './routes/search';
 import syncRouter from './routes/sync';
 import usersRouter from './routes/users';
 import vetsRouter from './routes/vets';
 import { attachAudit } from '../middleware/auditLog';
+import federationRouter from '../src/routes/federation';
 
 // Readiness probe state — set to false while the process is draining
 let isReady = true;
@@ -47,12 +47,13 @@ export function createApp(): Express {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   app.use(attachAudit as any);
 
-  const api = express.Router();
+  // Serve stellar.toml for federation discovery
+  app.use(
+    '/.well-known',
+    express.static(path.join(__dirname, '../.well-known'), { dotfiles: 'allow' }),
+  );
 
-  // --- Cache metrics (unauthenticated) ----------------------------------------
-  api.get('/cache/metrics', (_req, res) => {
-    res.json(getCacheMetrics());
-  });
+  const api = express.Router();
 
   // --- Health & readiness probes (unauthenticated) -----------------------
   api.get('/health', (_req, res) => {
@@ -75,6 +76,7 @@ export function createApp(): Express {
   // --- Application routes ------------------------------------------------
   api.use('/analytics', analyticsRouter);
   api.use('/backups', backupsRouter);
+  api.use('/federation', federationRouter);
   api.use('/users', usersRouter);
   api.use('/pets', petsRouter);
   api.use('/medical-records', medicalRecordsRouter);
@@ -103,12 +105,6 @@ export function createApp(): Express {
   app.use((_req, res) => {
     res.status(404).json(errBody('NOT_FOUND', 'Route not found'));
   });
-
-  // Initiate Redis connection and warm the cache safely
-  getRedisClient()
-    .connect()
-    .catch(() => {});
-  warmCache().catch((err: any) => console.error('[app] warmCache failed:', err.message));
 
   return app;
 }
