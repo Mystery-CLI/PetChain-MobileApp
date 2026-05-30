@@ -39,6 +39,7 @@ import VaccinationScreen from '../screens/VaccinationScreen';
 import TelemedicineScreen from '../screens/TelemedicineScreen';
 import ForumScreen from '../screens/ForumScreen';
 import FiatOnRampScreen from '../screens/FiatOnRampScreen';
+import HealthAlertsScreen from '../screens/HealthAlertsScreen';
 import analyticsService from '../services/analyticsService';
 import performance from '../utils/performance';
 
@@ -217,6 +218,11 @@ function MainTabs() {
         options={{ title: 'Vaccinations' }}
       />
       <Tab.Screen
+        name="HealthAlerts"
+        component={HealthAlertsScreen}
+        options={{ title: 'Alerts' }}
+      />
+      <Tab.Screen
         name="Telemedicine"
         component={TelemedicineScreen}
         options={{ title: 'Telemedicine' }}
@@ -256,6 +262,7 @@ const linking: LinkingOptions<RootStackParamList> = {
           Medications: 'medications/:medicationId?',
           Appointments: 'appointments/:appointmentId?',
           Vaccinations: 'vaccinations/:vaccinationId?',
+          HealthAlerts: 'health-alerts',
           Community: 'community',
           Emergency: 'emergency/:sosId?',
           Profile: 'profile',

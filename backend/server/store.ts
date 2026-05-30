@@ -120,6 +120,22 @@ export interface StoredEmergencySession {
   updates: Array<{ latitude: number; longitude: number; accuracy?: number; recordedAt: string }>;
 }
 
+export interface StoredHealthPredictionAlert {
+  id: string;
+  petId: string;
+  ownerId: string;
+  predictedIssue: string;
+  riskScore: number;
+  riskLevel: 'medium' | 'high';
+  contributingFactors: string[];
+  modelVersion: string;
+  status: 'active' | 'dismissed';
+  createdAt: string;
+  dismissedAt?: string;
+  feedback?: 'helpful' | 'not_helpful' | 'already_known' | 'false_alarm';
+  feedbackNotes?: string;
+}
+
 /** Matches `backend/services/medicationService` client expectations. */
 export interface StoredMedication {
   id: string;
@@ -225,6 +241,7 @@ const state = seed();
 const backups = new Map<string, StoredBackup>();
 const petQrIdentities = new Map<string, StoredPetQrIdentity>();
 const emergencySessions = new Map<string, StoredEmergencySession>();
+const healthPredictionAlerts = new Map<string, StoredHealthPredictionAlert>();
 
 // ─── Travel Certificates ──────────────────────────────────────────────────────
 
@@ -269,6 +286,7 @@ export const store = {
   backups,
   petQrIdentities,
   emergencySessions,
+  healthPredictionAlerts,
   travelCertificates,
   apiKeys,
   apiKeyUsage,
