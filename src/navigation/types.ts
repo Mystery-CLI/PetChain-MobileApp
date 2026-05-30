@@ -26,6 +26,7 @@ export type MainTabParamList = {
   Vaccinations: { vaccinationId?: string; petId?: string; dueDate?: string };
   Telemedicine: undefined;
   Community: undefined;
+  Referrals: undefined;
   Emergency: { sosId?: string };
   Profile: undefined;
 };

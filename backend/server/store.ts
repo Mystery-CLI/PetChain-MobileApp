@@ -120,6 +120,39 @@ export interface StoredEmergencySession {
   updates: Array<{ latitude: number; longitude: number; accuracy?: number; recordedAt: string }>;
 }
 
+export interface StoredReferralCode {
+  userId: string;
+  code: string;
+  createdAt: string;
+}
+
+export interface StoredReferral {
+  id: string;
+  referrerUserId: string;
+  referredUserId: string;
+  referralCode: string;
+  status: 'pending' | 'converted' | 'blocked';
+  signupAt: string;
+  convertedAt?: string;
+  blockedAt?: string;
+  blockReason?: string;
+  firstRecordId?: string;
+  deviceFingerprint?: string;
+  ipHash?: string;
+  userAgentHash?: string;
+}
+
+export interface StoredReferralCredit {
+  id: string;
+  userId: string;
+  referralId: string;
+  creditType: 'premium_days';
+  amount: number;
+  status: 'active' | 'redeemed' | 'expired' | 'revoked';
+  awardedAt: string;
+  expiresAt?: string;
+}
+
 /** Matches `backend/services/medicationService` client expectations. */
 export interface StoredMedication {
   id: string;
@@ -225,6 +258,9 @@ const state = seed();
 const backups = new Map<string, StoredBackup>();
 const petQrIdentities = new Map<string, StoredPetQrIdentity>();
 const emergencySessions = new Map<string, StoredEmergencySession>();
+const referralCodes = new Map<string, StoredReferralCode>();
+const referrals = new Map<string, StoredReferral>();
+const referralCredits = new Map<string, StoredReferralCredit>();
 
 // ─── Travel Certificates ──────────────────────────────────────────────────────
 
@@ -269,6 +305,9 @@ export const store = {
   backups,
   petQrIdentities,
   emergencySessions,
+  referralCodes,
+  referrals,
+  referralCredits,
   travelCertificates,
   apiKeys,
   apiKeyUsage,
