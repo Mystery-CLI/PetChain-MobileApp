@@ -17,14 +17,21 @@ import {
   AppointmentStatus,
   type Appointment,
   cancelAppointmentReminder,
+  cancelAllAppointmentReminders,
+  cancelAppointmentById,
+  rescheduleAppointment,
   detectConflicts,
   getAppointments,
   getPast,
   getUpcoming,
   saveAppointment,
-  scheduleAppointmentReminder,
+  scheduleAppointmentReminders,
   type ConflictDetectionResult,
 } from '../services/appointmentService';
+import {
+  syncAppointmentToCalendar,
+  removeAppointmentFromCalendar,
+} from '../services/calendarSyncService';
 import { getMedications } from '../services/medicationService';
 import type { Medication } from '../models/Medication';
 import { formatLocalDate, formatLocalTime } from '../utils/dateLocale';
@@ -109,9 +116,11 @@ const AppointmentScreen: React.FC = () => {
   // ─── Persist a confirmed appointment ─────────────────────────────────────────
 
   const persistAppointment = async (appt: Appointment, resolutionNote?: string) => {
-    const notifId = await scheduleAppointmentReminder(appt).catch(() => null);
-    if (notifId) appt.notificationId = notifId;
-    await saveAppointment(appt, resolutionNote);
+    const saved = await saveAppointment(appt, resolutionNote);
+    // Schedule 24h and 1h reminders
+    await scheduleAppointmentReminders(saved).catch(() => {});
+    // Sync to device calendar
+    await syncAppointmentToCalendar(saved).catch(() => {});
     setForm(EMPTY_FORM);
     setBookingVisible(false);
     setConflictModalVisible(false);
@@ -185,10 +194,11 @@ const AppointmentScreen: React.FC = () => {
         text: 'Yes, cancel',
         style: 'destructive',
         onPress: async () => {
-          if (appt.notificationId) {
-            await cancelAppointmentReminder(appt.notificationId).catch(() => {});
-          }
-          await saveAppointment({ ...appt, status: AppointmentStatus.CANCELLED });
+          await cancelAllAppointmentReminders(appt.id).catch(() => {});
+          await cancelAppointmentById(appt.id).catch(() =>
+            saveAppointment({ ...appt, status: AppointmentStatus.CANCELLED }),
+          );
+          await removeAppointmentFromCalendar(appt.id).catch(() => {});
           setDetailAppt(null);
           await load();
         },
@@ -238,18 +248,30 @@ const AppointmentScreen: React.FC = () => {
 
   const doReschedule = async (dateObj: Date, resolutionNote?: string) => {
     if (!detailAppt) return;
-    if (detailAppt.notificationId) {
-      await cancelAppointmentReminder(detailAppt.notificationId).catch(() => {});
-    }
-    const updated: Appointment = {
-      ...detailAppt,
-      date: dateObj.toISOString(),
-      status: AppointmentStatus.PENDING,
-      notificationId: undefined,
-    };
-    const notifId = await scheduleAppointmentReminder(updated).catch(() => null);
-    if (notifId) updated.notificationId = notifId;
-    await saveAppointment(updated, resolutionNote);
+    // Cancel old reminders and calendar event
+    await cancelAllAppointmentReminders(detailAppt.id).catch(() => {});
+    await removeAppointmentFromCalendar(detailAppt.id).catch(() => {});
+
+    const date = dateObj.toISOString().slice(0, 10);
+    const time = dateObj.toTimeString().slice(0, 5);
+
+    const updated = await rescheduleAppointment(detailAppt.id, date, time).catch(async () => {
+      // Offline fallback
+      const fallback: Appointment = {
+        ...detailAppt,
+        date: dateObj.toISOString(),
+        time,
+        status: AppointmentStatus.RESCHEDULED,
+        notificationId: undefined,
+      };
+      await saveAppointment(fallback, resolutionNote);
+      return fallback;
+    });
+
+    // Schedule new reminders and sync calendar
+    await scheduleAppointmentReminders(updated).catch(() => {});
+    await syncAppointmentToCalendar(updated).catch(() => {});
+
     setRescheduleVisible(false);
     setConflictModalVisible(false);
     setPendingAppointment(null);

@@ -15,6 +15,7 @@ module.exports = {
     '^expo-constants$': '<rootDir>/src/__mocks__/expo-constants.ts',
     '^expo-sqlite$': '<rootDir>/src/__mocks__/expo-sqlite.ts',
     '^expo-notifications$': '<rootDir>/src/__mocks__/expo-notifications.ts',
+    '^expo-calendar$': '<rootDir>/src/__mocks__/expo-calendar.ts',
     '^expo-secure-store$': '<rootDir>/src/__mocks__/expo-secure-store.ts',
     '^expo-in-app-purchases$': '<rootDir>/src/__mocks__/expo-in-app-purchases.ts',
     '^@sentry/react-native$': '<rootDir>/src/__mocks__/@sentry/react-native.ts',

@@ -26,41 +26,38 @@ export const CONFLICT_BUFFER_MS = 60 * 60 * 1000; // 1 hour
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-/** A detected conflict between a proposed appointment and an existing one */
 export interface AppointmentConflict {
   type: 'appointment' | 'medication';
-  /** Human-readable description */
   description: string;
-  /** The conflicting appointment (if type === 'appointment') */
   conflictingAppointment?: Appointment;
-  /** The conflicting medication name (if type === 'medication') */
   medicationName?: string;
-  /** The scheduled medication time (if type === 'medication') */
   medicationTime?: Date;
 }
 
-/** Result returned by `detectConflicts` */
 export interface ConflictDetectionResult {
   hasConflicts: boolean;
   conflicts: AppointmentConflict[];
-  /** Next available conflict-free slot (1-hour increments from proposed time) */
   suggestedTime?: Date;
+}
+
+export interface AvailabilityResult {
+  vetId: string;
+  date: string;
+  availableSlots: string[];
+}
+
+// ─── Availability ─────────────────────────────────────────────────────────────
+
+export async function getAvailability(vetId: string, date: string): Promise<AvailabilityResult> {
+  const response: AxiosResponse<{ data: AvailabilityResult }> = await apiClient.get(
+    `${BASE_URL}/availability`,
+    { params: { vetId, date } },
+  );
+  return response.data.data;
 }
 
 // ─── Conflict Detection ───────────────────────────────────────────────────────
 
-/**
- * Detect scheduling conflicts for a proposed appointment time.
- *
- * Checks:
- * 1. Existing (non-cancelled) appointments for the same pet within ±1 hour.
- * 2. Vet-supervised medication doses for the same pet within ±1 hour.
- *
- * @param petId           The pet's ID
- * @param proposedTime    The proposed appointment datetime
- * @param medications     Active medications for the pet (pass [] to skip med check)
- * @param excludeId       Appointment ID to exclude (used when rescheduling)
- */
 export async function detectConflicts(
   petId: string,
   proposedTime: Date,
@@ -72,7 +69,6 @@ export async function detectConflicts(
   const windowStart = new Date(proposedTime.getTime() - CONFLICT_BUFFER_MS).toISOString();
   const windowEnd = new Date(proposedTime.getTime() + CONFLICT_BUFFER_MS).toISOString();
 
-  // ── 1. Check existing appointments ────────────────────────────────────────
   const nearby = await getAppointmentsInWindow<Appointment>(petId, windowStart, windowEnd);
   for (const appt of nearby) {
     if (excludeId && appt.id === excludeId) continue;
@@ -87,7 +83,6 @@ export async function detectConflicts(
     }
   }
 
-  // ── 2. Check vet-supervised medication times ───────────────────────────────
   const { getScheduleForRange } = await import('./medicationService');
   const windowStartDate = new Date(proposedTime.getTime() - CONFLICT_BUFFER_MS);
   const windowEndDate = new Date(proposedTime.getTime() + CONFLICT_BUFFER_MS);
@@ -116,11 +111,6 @@ export async function detectConflicts(
   return { hasConflicts, conflicts, suggestedTime };
 }
 
-/**
- * Returns true if a medication is flagged as requiring vet supervision.
- * Heuristic: any medication whose instructions mention "vet", "supervised",
- * or "injection" is treated as vet-supervised.
- */
 export function isVetSupervised(med: Medication): boolean {
   const haystack = [med.instructions ?? '', med.notes ?? ''].join(' ').toLowerCase();
   return (
@@ -132,42 +122,30 @@ export function isVetSupervised(med: Medication): boolean {
   );
 }
 
-/**
- * Finds the next 1-hour-increment slot (up to 14 days out) that has no conflicts.
- */
 export async function findNextAvailableSlot(
   petId: string,
   from: Date,
   medications: Medication[] = [],
 ): Promise<Date | undefined> {
-  const SLOT_INCREMENT_MS = 60 * 60 * 1000; // 1 hour
-  const MAX_ITERATIONS = 14 * 24; // 14 days
-
-  let candidate = new Date(from.getTime() + SLOT_INCREMENT_MS);
+  const MAX_ITERATIONS = 14 * 24;
+  let candidate = new Date(from.getTime() + CONFLICT_BUFFER_MS);
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     const result = await detectConflicts(petId, candidate, medications);
     if (!result.hasConflicts) return candidate;
-    candidate = new Date(candidate.getTime() + SLOT_INCREMENT_MS);
+    candidate = new Date(candidate.getTime() + CONFLICT_BUFFER_MS);
   }
-
   return undefined;
 }
 
-// ─── Local CRUD ───────────────────────────────────────────────────────────────
+// ─── CRUD ─────────────────────────────────────────────────────────────────────
 
-/**
- * Fetch all locally-stored appointments (no petId filter).
- * Also attempts a remote fetch; local data is the source of truth when offline.
- */
 export async function getAppointments(petId?: string): Promise<Appointment[]> {
   if (petId) return getUpcomingAppointments(petId);
 
-  // Try remote first, fall back to local SQLite
   try {
     const response: AxiosResponse<{ data: Appointment[] }> = await apiClient.get(BASE_URL);
     const remoteAppts = response.data.data;
-    // Persist to local DB for offline use
     await Promise.all(remoteAppts.map((a) => upsertAppointment(a)));
     return remoteAppts;
   } catch {
@@ -187,11 +165,9 @@ export async function getUpcomingAppointments(petId: string): Promise<Appointmen
         (a, b) =>
           new Date(`${a.date}T${a.time}`).getTime() - new Date(`${b.date}T${b.time}`).getTime(),
       );
-    // Persist locally
     await Promise.all(upcoming.map((a) => upsertAppointment(a)));
     return upcoming;
   } catch {
-    // Offline fallback
     const local = await getAllAppointmentsByPetId<Appointment>(petId);
     const now = new Date();
     return local
@@ -200,36 +176,34 @@ export async function getUpcomingAppointments(petId: string): Promise<Appointmen
   }
 }
 
-/** Sync filter: returns upcoming appointments from a list */
 export function getUpcoming(appointments: Appointment[]): Appointment[] {
   const now = new Date();
   return appointments
     .filter((a) => {
       const d = new Date(a.date);
       return (
-        d >= now && a.status !== AppointmentStatus.CANCELLED && (a.status as string) !== 'cancelled'
+        d >= now &&
+        a.status !== AppointmentStatus.CANCELLED &&
+        (a.status as string) !== 'cancelled'
       );
     })
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 }
 
-/** Sync filter: returns past appointments from a list */
 export function getPast(appointments: Appointment[]): Appointment[] {
   const now = new Date();
   return appointments
     .filter((a) => {
       const d = new Date(a.date);
       return (
-        d < now || a.status === AppointmentStatus.CANCELLED || (a.status as string) === 'cancelled'
+        d < now ||
+        a.status === AppointmentStatus.CANCELLED ||
+        (a.status as string) === 'cancelled'
       );
     })
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
-/**
- * Persist an appointment — tries remote API first, always writes to local SQLite.
- * If `conflictResolutionNote` is provided it is appended to `appointment.notes`.
- */
 export async function saveAppointment(
   appointment: Omit<Appointment, 'id'> & { id?: string },
   conflictResolutionNote?: string,
@@ -241,12 +215,10 @@ export async function saveAppointment(
       : `[Conflict resolution]: ${conflictResolutionNote}`;
   }
 
-  // Always write to local SQLite
   if (appt.id) {
     await upsertAppointment(appt);
   }
 
-  // Attempt remote sync
   try {
     if (appt.id) {
       const response = await apiClient.put<{ data: Appointment }>(`${BASE_URL}/${appt.id}`, appt);
@@ -259,12 +231,66 @@ export async function saveAppointment(
     await upsertAppointment(saved);
     return saved;
   } catch {
-    // Return the locally-saved version when offline
     return appt;
   }
 }
 
-/** Delete an appointment from both local DB and remote. */
+/** Cancel an appointment via the dedicated cancel endpoint. */
+export async function cancelAppointmentById(
+  id: string,
+  reason?: string,
+): Promise<Appointment> {
+  try {
+    const response = await apiClient.post<{ data: Appointment }>(`${BASE_URL}/${id}/cancel`, { reason });
+    const cancelled = response.data.data;
+    await upsertAppointment(cancelled);
+    return cancelled;
+  } catch {
+    // Offline: update locally
+    const local = (await getAllLocalAppointments<Appointment>()).find((a) => a.id === id);
+    if (local) {
+      const updated = { ...local, status: AppointmentStatus.CANCELLED, cancellationReason: reason };
+      await upsertAppointment(updated);
+      return updated;
+    }
+    throw new Error('Appointment not found');
+  }
+}
+
+/** Reschedule an appointment via the dedicated reschedule endpoint. */
+export async function rescheduleAppointment(
+  id: string,
+  date: string,
+  time: string,
+  durationMinutes?: number,
+): Promise<Appointment> {
+  try {
+    const response = await apiClient.post<{ data: Appointment }>(`${BASE_URL}/${id}/reschedule`, {
+      date,
+      time,
+      durationMinutes,
+    });
+    const rescheduled = response.data.data;
+    await upsertAppointment(rescheduled);
+    return rescheduled;
+  } catch {
+    const local = (await getAllLocalAppointments<Appointment>()).find((a) => a.id === id);
+    if (local) {
+      const updated = {
+        ...local,
+        date,
+        time,
+        ...(durationMinutes !== undefined ? { durationMinutes } : {}),
+        status: AppointmentStatus.RESCHEDULED,
+        rescheduledFrom: `${local.date}T${local.time}`,
+      };
+      await upsertAppointment(updated);
+      return updated;
+    }
+    throw new Error('Appointment not found');
+  }
+}
+
 export async function deleteAppointment(id: string): Promise<void> {
   await deleteAppointmentById(id);
   try {
@@ -276,19 +302,61 @@ export async function deleteAppointment(id: string): Promise<void> {
 
 // ─── Notification helpers ─────────────────────────────────────────────────────
 
-export async function scheduleAppointmentReminder(appointment: Appointment): Promise<string> {
+/**
+ * Schedule 24h and 1h reminder notifications for an appointment.
+ * Returns [notifId24h, notifId1h] — either may be null if scheduling failed
+ * (e.g. appointment is too soon or in the past).
+ */
+export async function scheduleAppointmentReminders(
+  appointment: Appointment,
+): Promise<[string | null, string | null]> {
   const { scheduleAppointmentNotification } = await import('./notificationService');
-  return scheduleAppointmentNotification({
-    id: appointment.id,
-    title: appointment.title ?? appointment.notes ?? 'Vet Appointment',
-    date: appointment.date,
-    location: appointment.location,
-  });
+
+  const apptMs = new Date(`${appointment.date}T${appointment.time ?? '00:00'}:00`).getTime();
+  const now = Date.now();
+
+  const title = appointment.title ?? appointment.notes ?? 'Vet Appointment';
+
+  const notif24h = apptMs - 24 * 60 * 60 * 1000 > now
+    ? await scheduleAppointmentNotification({
+        id: `${appointment.id}-24h`,
+        title: `Reminder: ${title} tomorrow`,
+        date: new Date(apptMs - 24 * 60 * 60 * 1000).toISOString(),
+        location: appointment.location,
+      }).catch(() => null)
+    : null;
+
+  const notif1h = apptMs - 60 * 60 * 1000 > now
+    ? await scheduleAppointmentNotification({
+        id: `${appointment.id}-1h`,
+        title: `Reminder: ${title} in 1 hour`,
+        date: new Date(apptMs - 60 * 60 * 1000).toISOString(),
+        location: appointment.location,
+      }).catch(() => null)
+    : null;
+
+  return [notif24h, notif1h];
 }
 
-export async function cancelAppointmentReminder(appointmentId: string): Promise<void> {
+/** Legacy single-reminder helper (kept for backward compatibility). */
+export async function scheduleAppointmentReminder(appointment: Appointment): Promise<string | null> {
+  const [notif24h] = await scheduleAppointmentReminders(appointment);
+  return notif24h;
+}
+
+export async function cancelAppointmentReminder(notificationId: string): Promise<void> {
   const { cancelEntityNotification } = await import('./notificationService');
-  return cancelEntityNotification(appointmentId);
+  return cancelEntityNotification(notificationId);
+}
+
+/** Cancel all reminders for an appointment (both 24h and 1h). */
+export async function cancelAllAppointmentReminders(appointmentId: string): Promise<void> {
+  const { cancelEntityNotification } = await import('./notificationService');
+  await Promise.allSettled([
+    cancelEntityNotification(`${appointmentId}-24h`),
+    cancelEntityNotification(`${appointmentId}-1h`),
+    cancelEntityNotification(appointmentId), // legacy single-id
+  ]);
 }
 
 // ─── Private helpers ──────────────────────────────────────────────────────────
