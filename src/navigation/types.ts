@@ -27,6 +27,7 @@ export type MainTabParamList = {
   Telemedicine: undefined;
   Community: undefined;
   Emergency: { sosId?: string };
+  Notifications: undefined;
   Profile: undefined;
 };
 
