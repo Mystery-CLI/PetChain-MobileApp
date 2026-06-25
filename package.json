@@ -29,6 +29,7 @@
     "start:production": "APP_ENV=production expo start",
     "eas:build:dev": "eas build --platform all --profile development",
     "eas:build:preview": "eas build --platform all --profile preview",
+    "eas:build:staging": "eas build --platform all --profile staging",
     "eas:build:prod": "eas build --platform all --profile production",
     "test": "jest --runInBand",
     "test:ci": "jest --runInBand --ci --coverage",
